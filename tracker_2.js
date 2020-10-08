@@ -22,10 +22,12 @@ import { CreateStackNavigator, createStackNavigator } from '@react-navigation/st
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import Spinner from 'react-native-loading-spinner-overlay';
+import RNRestart from 'react-native-restart';
 
 class Tracker extends Component {
 
-    url = 'https://covidtrackerapi.bsg.ox.ac.uk/api/v2/stringency/date-range/2020-01-01/2020-08-31';
+    //now = new Date();
+    //url = 'https://covidtrackerapi.bsg.ox.ac.uk/api/v2/stringency/date-range/2020-01-01/2020-' + (now.getMonth + 1).toString() + "-" + (now.getDate).toString();
     screenWidth = Dimensions.get("window").width;
     confirmed_chart = {
         labels: [], 
@@ -51,11 +53,10 @@ class Tracker extends Component {
 
   state = {
     json: null,
+    loading: true,
     spinner: true,
-    is_spinning: false,
     loaded: false,
     load_failed: false,
-    ready: false,
     error_msg: "",
     country: "ALL",
   };
@@ -67,9 +68,14 @@ class Tracker extends Component {
 
   componentDidMount(){
     console.log("Test of mount");
+    this.getData().then(() => {
+      }).catch((error) => {
+        this.setState({...this.state, spinner: false, load_failed: true, error_msg: error.toString()});
+    });
+    this.parseData();
   }
 
-   changeCountry(sel_country){
+  changeCountry(sel_country){
     this.confirmed_chart = {
         labels: [], 
         datasets: [
@@ -91,11 +97,10 @@ class Tracker extends Component {
     this.deaths_sum = 0;
     this.date_statistic = [];
     this.setState({
+      ...this.state,
         spinner: true,
-        is_spinning: false,
         loaded: true,
         load_failed: false,
-        ready: false,
         country: sel_country,
       });
     //this.countries = [];
@@ -103,11 +108,13 @@ class Tracker extends Component {
 
   async getData() {
     try {
-        var response = await fetch(this.url);
+        var now = new Date();
+        var url = 'https://covidtrackerapi.bsg.ox.ac.uk/api/v2/stringency/date-range/2020-01-01/2020-' + (now.getMonth() + 1).toString() + "-" + (now.getDate() - 1).toString();
+        var response = await fetch(url);
         var json = await response.json();
         console.log(json);
         //this.parseData(json);
-        this.setState({json: json, loaded: true});
+        this.setState({json: json, loading: true, loaded: true, spinner: false});
     }
     catch (error){
         throw new Error(error);
@@ -146,6 +153,7 @@ class Tracker extends Component {
                 this.confirmed_sum += value.confirmed;
                 this.deaths_sum += value.deaths;
             }
+            this.date_statistic.unshift({date_value: date, confirmed: this.confirmed_sum, deaths: this.deaths_sum});
             //this.confirmed_sum += i.confirmed;
             //this.death_sum += i.deaths;
             this.confirmed_chart.labels.unshift(date);
@@ -160,61 +168,54 @@ class Tracker extends Component {
         keys.forEach(
         i => {
           var record = this.state.json.data[i][this.state.country];
-          this.confirmed_sum = this.state.json.data[i][this.state.country].confirmed;
-          this.death_sum = this.state.json.data[i][this.state.country].deaths;
-          this.confirmed_chart.labels.unshift(this.state.json.data[i][this.state.country].date_value);
-          this.confirmed_chart.datasets[0].data.unshift(this.state.json.data[i][this.state.country].confirmed);
-          this.death_chart.labels.unshift(this.state.json.data[i][this.state.country].date_value);
-          this.death_chart.datasets[0].data.unshift(this.state.json.data[i][this.state.country].deaths);
+          if (record != undefined) {
+            this.date_statistic.unshift({date_value: record.date_value, confirmed: record.confirmed, deaths: record.deaths});
+            this.confirmed_sum = record.confirmed;
+            this.deaths_sum = record.deaths;
+            this.confirmed_chart.labels.unshift(record.date_value);
+            this.confirmed_chart.datasets[0].data.unshift(record.confirmed);
+            this.death_chart.labels.unshift(record.date_value);
+            this.death_chart.datasets[0].data.unshift(record.deaths);
+          }
         }
       );
     }
       console.log(flatData);
-      this.setState({spinner: false, ready: true});
+    //this.setState({spinner: false});
   }
-
   
-
-
   render(){
-    if (this.state.is_spinning == false){
-        this.setState({is_spinning: true});
+    if(this.state.loading == true){
+      return (
+        <View>
+          <Spinner
+          visible={this.state.spinner}
+          textContent={'Loading data...'}
+          textStyle={styles.spinnerTextStyle}
+        />
+        </View>
+      );
     }
-    else if (this.state.is_spinning == true && this.state.ready == false && this.state.loaded == false) {
-        return (
-            <View>
-              <Spinner
-              visible={this.state.spinner}
-              textContent={'Loading data...'}
-              textStyle={styles.spinnerTextStyle}
-            />
-            </View>
-        );
+
+    /*if (this.state.loaded == true){
+        this.parseData();
     }
-    if (this.state.loaded == false){
+    else if (this.state.loaded == false){
         if(this.state.load_failed == false) {
             this.getData().then(() => {
-                
             }).catch((error) => {
-                this.setState({spinner: false, load_failed: true, error_msg: error.toString()});
+                this.setState({...this.state, spinner: false, load_failed: true, error_msg: error.toString()});
             });
-            //return <View></View>
         }
         else {
             alert("Failed with " + this.state.error_msg);
             return (
                 <View style={styles.container}>
                     <Text>{this.state.error_msg}</Text>
-                    <Button title="Try Again" onPress={() => this.resetButton()}></Button>
+                    <Button title="Restart" onPress={() => {RNRestart.Restart();}}></Button>
                 </View>
             );
         }
-    }
-    else if (this.state.loaded == true && this.state.ready == false && this.state.is_spinning == true){
-        this.parseData();
-    }
-
-    /*if (this.state.spinner == true){
         return (
             <View>
               <Spinner
@@ -224,20 +225,8 @@ class Tracker extends Component {
             />
             </View>
           );
-    }
-    else*/
-    if (this.state.ready == false) {
-        return (
-            <View>
-              <Spinner
-              visible={this.state.spinner}
-              textContent={'Loading data...'}
-              textStyle={styles.spinnerTextStyle}
-            />
-            </View>
-        );
-    }
-    else
+    }*/
+
     //alert(this.death_sum);
     //return (<View></View>);
     return (
@@ -266,7 +255,11 @@ class Tracker extends Component {
         />
        
         <Text style={styles.center_text}>Confirmed</Text>
-        <ScrollView horizontal>
+
+        <ScrollView 
+          horizontal={true}
+          ref={ref => {this.scrollView = ref}}
+          onContentSizeChange={() => this.scrollView.scrollToEnd({animated: true})}>
         <BarChart
             data={this.confirmed_chart}
             width={this.screenWidth + (json_data_len * 10)}
@@ -289,6 +282,7 @@ class Tracker extends Component {
               }
             }
         />
+
         </ScrollView>
         <Text style={styles.center_text}>Deaths</Text>
         <ScrollView horizontal>
@@ -316,7 +310,8 @@ class Tracker extends Component {
         />
         </ScrollView>
         <Button title="Details" onPress={() => this.props.navigation.navigate('Details', {
-            test: 'WTF?? IS THIS THING REALLY WORKS??? HOOORRAAAYYY!!!11!111',
+            json: this.date_statistic,
+            country: this.state.country,
         })}></Button>
         </ScrollView>
       </View>

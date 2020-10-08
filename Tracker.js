@@ -22,12 +22,29 @@ import { CreateStackNavigator, createStackNavigator } from '@react-navigation/st
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import Spinner from 'react-native-loading-spinner-overlay';
+import RNRestart from 'react-native-restart';
 
 class Tracker extends Component {
 
     //now = new Date();
     //url = 'https://covidtrackerapi.bsg.ox.ac.uk/api/v2/stringency/date-range/2020-01-01/2020-' + (now.getMonth + 1).toString() + "-" + (now.getDate).toString();
     screenWidth = Dimensions.get("window").width;
+    screenHeight = Dimensions.get("window").height;
+    total_chart = {
+      labels: [], 
+      datasets: [
+          { 
+              data: [],
+              strokeWidth: 2,
+							color: (opacity = 1) => `rgba(255,0,0, ${opacity})`,
+          },
+          {
+            data: [],
+            strokeWidth: 2,
+						color: (opacity = 1) => `rgba(0,0,0, ${opacity})`,
+          },
+      ],
+  };
     confirmed_chart = {
         labels: [], 
         datasets: [
@@ -52,7 +69,9 @@ class Tracker extends Component {
 
   state = {
     json: null,
+    loading: true,
     spinner: true,
+    countryIsChanged: false,
     loaded: false,
     load_failed: false,
     error_msg: "",
@@ -64,11 +83,31 @@ class Tracker extends Component {
     console.log("Test of constructor");
   }
 
-  componentDidMount(){
+  async componentDidMount(){
     console.log("Test of mount");
+    await this.getData().then(() => {
+      }).catch((error) => {
+        this.setState({...this.state, spinner: false, loading: false, loaded: false, load_failed: true, error_msg: error.toString()});
+    });
+    console.log("Mount Complete");
   }
 
-   changeCountry(sel_country){
+  changeCountry(sel_country){
+    this.total_chart = {
+      labels: [], 
+      datasets: [
+          { 
+              data: [],
+              strokeWidth: 2,
+							color: (opacity = 1) => `rgba(255,0,0, ${opacity})`,
+          },
+          {
+            data: [],
+            strokeWidth: 2,
+						color: (opacity = 1) => `rgba(0,0,0, ${opacity})`,
+          },
+      ],
+  };
     this.confirmed_chart = {
         labels: [], 
         datasets: [
@@ -89,9 +128,35 @@ class Tracker extends Component {
     this.confirmed_sum = 0;
     this.deaths_sum = 0;
     this.date_statistic = [];
+    this.date_statistic_reversed = []
+
+    /*state = {
+      json: null,
+      loading: true,
+      spinner: true,
+      countryIsChanged: false,
+      loaded: false,
+      load_failed: false,
+      error_msg: "",
+      country: "ALL",
+    };
+
     this.setState({
+      ...this.state,
+      loading: true,
+      spinner: true,
+      countryIsChanged: false,
+      loaded: false,
+      load_failed: false,
+      country: sel_country,
+    });*/
+
+    this.setState({
+      ...this.state,
         spinner: true,
+        countryIsChanged: true,
         loaded: true,
+        loading: true,
         load_failed: false,
         country: sel_country,
       });
@@ -105,18 +170,21 @@ class Tracker extends Component {
         var response = await fetch(url);
         var json = await response.json();
         console.log(json);
+        this.parseData(json);
+        this.setState({...this.state, json: json, loading: false, loaded: true, spinner: false});
         //this.parseData(json);
-        this.setState({json: json, loaded: true});
+        //this.setState({json: json, loading: true, loaded: true, spinner: false});
+        //return json;
     }
     catch (error){
         throw new Error(error);
     }
   }
 
-  parseData() {
+  parseData(json) {
     var flatData = [];
     if(this.countries.length == 0) {
-        this.state.json.countries.forEach(
+      json.countries.forEach(
             i => {
                 this.countries.push({label: i.toUpperCase(), value: i.toUpperCase(),});
             }
@@ -125,13 +193,13 @@ class Tracker extends Component {
     }
     if (this.state.country == "ALL") {
         //var countries = Object.keys(json.countries);
-        var keys = Object.keys(this.state.json.data);
+        var keys = Object.keys(json.data);
         json_data_len = keys.length;
         //this.confirmed_sum = this.state.json.scale.casesConfirmed.max;
         //this.death_sum = this.state.json.scale.deaths.max;
         keys.forEach(
         i => {
-          var record = this.state.json.data[i];
+          var record = json.data[i];
           flatData.push(record);
         }
       );
@@ -145,49 +213,79 @@ class Tracker extends Component {
                 this.confirmed_sum += value.confirmed;
                 this.deaths_sum += value.deaths;
             }
-            this.date_statistic.unshift({date_value: date, confirmed: this.confirmed_sum, deaths: this.deaths_sum});
+            this.date_statistic.push({date_value: date, confirmed: this.confirmed_sum, deaths: this.deaths_sum});
             //this.confirmed_sum += i.confirmed;
             //this.death_sum += i.deaths;
-            this.confirmed_chart.labels.unshift(date);
-            this.confirmed_chart.datasets[0].data.unshift(this.confirmed_sum);
-            this.death_chart.labels.unshift(date);
-            this.death_chart.datasets[0].data.unshift(this.deaths_sum);
+            this.confirmed_chart.labels.push(date);
+            this.confirmed_chart.datasets[0].data.push(this.confirmed_sum);
+            this.death_chart.labels.push(date);
+            this.death_chart.datasets[0].data.push(this.deaths_sum);
+            this.total_chart.labels.push(date);
+            this.total_chart.datasets[0].data.push(this.confirmed_sum);
+            this.total_chart.datasets[1].data.push(this.deaths_sum);
         }
       );
     }
     else {
-        var keys = Object.keys(this.state.json.data);
+        var keys = Object.keys(json.data);
         keys.forEach(
         i => {
-          var record = this.state.json.data[i][this.state.country];
+          var record = json.data[i][this.state.country];
           if (record != undefined) {
-            this.date_statistic.unshift({date_value: record.date_value, confirmed: record.confirmed, deaths: record.deaths});
+            this.date_statistic.push({date_value: record.date_value, confirmed: record.confirmed, deaths: record.deaths});
             this.confirmed_sum = record.confirmed;
             this.deaths_sum = record.deaths;
-            this.confirmed_chart.labels.unshift(record.date_value);
-            this.confirmed_chart.datasets[0].data.unshift(record.confirmed);
-            this.death_chart.labels.unshift(record.date_value);
-            this.death_chart.datasets[0].data.unshift(record.deaths);
+            this.confirmed_chart.labels.push(record.date_value);
+            this.confirmed_chart.datasets[0].data.push(record.confirmed);
+            this.death_chart.labels.push(record.date_value);
+            this.death_chart.datasets[0].data.push(record.deaths);
+
+            this.total_chart.labels.push(record.date_value);
+            this.total_chart.datasets[0].data.push(record.confirmed);
+            this.total_chart.datasets[1].data.push(record.deaths);
           }
         }
       );
     }
+    this.date_statistic_reversed = this.date_statistic.reverse();
       console.log(flatData);
-      this.setState({spinner: false});
+    //this.setState({spinner: false});
   }
-
-  
   
   render(){
-    if (this.state.loaded == true && this.state.spinner == true){
+    if(this.state.loading == true && this.state.countryIsChanged == false){
+      return (
+        <View>
+          <Spinner
+          visible={this.state.spinner}
+          textContent={'Loading data...'}
+          textStyle={styles.spinnerTextStyle}
+        />
+        </View>
+      );
+    }
+    else if (this.state.countryIsChanged == true){
+      this.parseData(this.state.json);
+    }
+
+    if(this.state.load_failed == true){
+      alert("Failed with " + this.state.error_msg);
+        return (
+          <View style={styles.container}>
+            <Text>{this.state.error_msg}</Text>
+            <Button title="Restart" onPress={() => {RNRestart.Restart();}}></Button>
+          </View>
+        );
+    }
+
+    /*if (this.state.loaded == true){
         this.parseData();
     }
     else if (this.state.loaded == false){
         if(this.state.load_failed == false) {
             this.getData().then(() => {
-
             }).catch((error) => {
-                this.setState({spinner: false, load_failed: true, error_msg: error.toString()});
+                this.setState({...this.state, spinner: false, load_failed: true, error_msg: error.toString()});
             });
         }
         else {
@@ -195,7 +293,7 @@ class Tracker extends Component {
             return (
                 <View style={styles.container}>
                     <Text>{this.state.error_msg}</Text>
-                    <Button title="Restart" onPress={() => this.resetButton()}></Button>
+                    <Button title="Restart" onPress={() => {RNRestart.Restart();}}></Button>
                 </View>
             );
         }
@@ -208,7 +306,7 @@ class Tracker extends Component {
             />
             </View>
           );
-    }
+    }*/
 
     //alert(this.death_sum);
     //return (<View></View>);
@@ -234,61 +332,38 @@ class Tracker extends Component {
             }}
             dropDownMaxHeight={250}
             dropDownStyle={{backgroundColor: '#fafafa'}}
-            onChangeItem={item => this.changeCountry(item.value)}
+            onChangeItem={item => {
+              this.changeCountry(item.value);
+              this._leftView.scrollToEnd({ animated: true });
+            }}
         />
-       
-        <Text style={styles.center_text}>Confirmed</Text>
-        <ScrollView horizontal>
-        <BarChart
-            data={this.confirmed_chart}
-            width={this.screenWidth + (json_data_len * 10)}
-            height={200}
+
+        <ScrollView 
+          horizontal={true}
+          ref={scrollView => { this._leftView = scrollView }}
+          onContentSizeChange={() => this._leftView.scrollToEnd({animated: true})}>
+        <LineChart
+            data={this.total_chart}
+            width={this.screenWidth * 15}
+            height={this.screenHeight / (3 / 2)}
             chartConfig={{
-                backgroundColor: "#FF0000",
-                backgroundGradientFrom: "#FF0000",
-                backgroundGradientTo: "#FE4A4A",
-                decimalPlaces: 2, // optional, defaults to 2dp
-                color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
-                labelColor: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
-                style: {
-                  borderRadius: 16
-                },
+              backgroundColor: "#FFFFFF",
+              backgroundGradientFrom: "#FFFFFF",
+              backgroundGradientTo: "#FFFFFF",
+              color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+              strokeWidth: 2 // optional, default 3
               }}
-            verticalLabelRotation={20}
+            verticalLabelRotation={45}
             style={{
                 marginVertical: 8,
                 borderRadius: 8
               }
             }
         />
+
         </ScrollView>
-        <Text style={styles.center_text}>Deaths</Text>
-        <ScrollView horizontal>
-        <BarChart
-            data={this.death_chart}
-            width={this.screenWidth + (json_data_len * 10)}
-            height={200}
-            chartConfig={{
-                backgroundColor: "#000000",
-                backgroundGradientFrom: "#000000",
-                backgroundGradientTo: "#000000",
-                decimalPlaces: 2, // optional, defaults to 2dp
-                color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
-                labelColor: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
-                style: {
-                  borderRadius: 16
-                },
-              }}
-            verticalLabelRotation={20}
-            style={{
-                marginVertical: 8,
-                borderRadius: 8
-              }
-            }
-        />
-        </ScrollView>
-        <Button title="Details" onPress={() => this.props.navigation.navigate('Details', {
-            json: this.date_statistic,
+        <Button style={styles.button_details} title="Details" onPress={() => this.props.navigation.navigate('Details', {
+            json: this.date_statistic_reversed,
             country: this.state.country,
         })}></Button>
         </ScrollView>
@@ -328,6 +403,12 @@ const styles = StyleSheet.create({
   separator: {
     height: 2,
     backgroundColor: "black",
+  },
+
+  button_details: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    marginBottom: 36
   }
 });
 

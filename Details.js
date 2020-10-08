@@ -17,6 +17,8 @@ class Details extends Component {
 
   url = 'https://covidtrackerapi.bsg.ox.ac.uk/api/v2/stringency/date-range/2020-01-01/2020-08-31';
 
+  //data = this.props.route.params.json.reverse();
+
   state = {
     json: null,
     spinner: true
@@ -85,7 +87,6 @@ class Details extends Component {
             return <View style={styles.separator}></View>
           }
         }
-          initialScrollIndex={Object.keys(this.props.route.params.json).length - 1}
           data={this.props.route.params.json}
           renderItem={({item, index}) => {
             console.log(item);
